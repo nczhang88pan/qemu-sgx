@@ -41,4 +41,12 @@ int kvm_device_msix_set_vector(KVMState *s, uint32_t dev_id, uint32_t vector,
 int kvm_device_msix_assign(KVMState *s, uint32_t dev_id);
 int kvm_device_msix_deassign(KVMState *s, uint32_t dev_id);
 
+struct kvm_sgx_info {
+    ram_addr_t epc_base;
+    ram_addr_t epc_size;
+    void *epc_addr;
+};
+int kvm_init_sgx(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size);
+void kvm_get_sgx_info(KVMState *s, struct kvm_sgx_info *infop);
+
 #endif

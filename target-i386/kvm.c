@@ -3334,3 +3334,143 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
 {
     abort();
 }
+
+#define ISGX_SYSNODE_NAME   "/dev/sgx"
+
+/* VM SGX state */
+typedef struct SGXState {
+    int         sgx_fd;
+    hwaddr      epc_base;
+    ram_addr_t  epc_size;
+    __u32       epc_handle; /* handle of EPC allocated to this VM. */
+    void        *epc_addr;  /* host virtual address of EPC by mmap */
+} SGXState;
+
+static SGXState __sgx_state = {
+	.sgx_fd = 0,
+	.epc_size = 0,
+	.epc_base = 0,
+	.epc_handle = 0,
+	.epc_addr = NULL,
+};
+static SGXState *sgx_state = &__sgx_state;
+
+/*
+ * FIXME:
+ *
+ * IOCTLs to alloc/free EPC for virtual machine. Finally this should not be
+ * explicitly defined here but via header file inclusion. Currently, we copy it
+ * from sgx_user.h.
+ */
+#define SGX_MAGIC 0xA4
+
+#define SGX_IOC_ALLOC_VM_EPC \
+	_IOWR(SGX_MAGIC, 0x03, struct sgx_alloc_vm_epc)
+#define SGX_IOC_FREE_VM_EPC \
+	_IOW(SGX_MAGIC, 0x04, struct sgx_free_vm_epc)
+
+struct sgx_alloc_vm_epc {
+	/* IN: How many pages for guest */
+	__u32   nr_pages;
+	/* IN: Flags (placeholder) */
+	__u32   flags;
+	/* OUT: handle of the EPC buffer, passed as pgoff in mmap */
+	__u32   handle;
+} __attribute__((packed));
+
+struct sgx_free_vm_epc {
+	/* IN: handle of EPC buffer to be freed */
+	__u32   handle;
+} __attribute__((packed));
+
+static void kvm_free_epc(KVMState *s)
+{
+    int ret;
+
+    if (sgx_state->epc_addr) {
+        ret = munmap(sgx_state->epc_addr, sgx_state->epc_size);
+        if (ret)
+            error_report("%s: munmap EPC failed with %d.\n", __func__, ret);
+    }
+
+    if (sgx_state->epc_handle) {
+        struct sgx_free_vm_epc freep;
+        freep.handle = sgx_state->epc_handle;
+        ret = ioctl(sgx_state->sgx_fd, SGX_IOC_FREE_VM_EPC, &freep);
+        if (ret)
+             error_report("%s: ISGX_IOCTL_FREE_VM_EPC failed with %d\n.",
+                     __func__, ret);
+    }
+
+    if (sgx_state->sgx_fd) {
+        ret = qemu_close(sgx_state->sgx_fd);
+        if (ret)
+             error_report("%s: close %s failed with %d\n.",
+                     __func__, ISGX_SYSNODE_NAME, ret);
+    }
+
+    memset(sgx_state, 0, sizeof(*sgx_state));
+}
+
+static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size)
+{
+    int fd;
+    struct sgx_alloc_vm_epc allocp;
+    void *addr;
+    int ret;
+
+    fd = qemu_open(ISGX_SYSNODE_NAME, O_RDWR);
+    if (fd <= 0) {
+        ret = -EFAULT;
+        error_report("%s: SGX driver is not loaded.\n", __func__);
+        goto err;
+    }
+
+    sgx_state->sgx_fd = fd;
+
+    allocp.nr_pages = (epc_size >> 12);
+    allocp.flags = 0;
+    ret = ioctl(fd, SGX_IOC_ALLOC_VM_EPC, &allocp);
+    if (ret) {
+        error_report("%s: ISGX_IOCTL_ALLOC_VM_EPC failed with %d.\n",
+                __func__, ret);
+        goto err;
+    }
+
+    sgx_state->epc_base = epc_base;
+    sgx_state->epc_size = epc_size;
+    sgx_state->epc_handle = allocp.handle;
+
+    addr = mmap(0, epc_size, PROT_NONE, MAP_PRIVATE, fd, allocp.handle);
+    if (!addr) {
+        ret = -EFAULT;
+        error_report("%s: mmap EPC failed\n", __func__);
+        goto err;
+    }
+
+    sgx_state->epc_addr = addr;
+
+    return 0;
+err:
+    kvm_free_epc(s);
+    return ret;
+}
+
+int kvm_init_sgx(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size)
+{
+    if (!kvm_enabled())
+        return -EINVAL;
+    return kvm_alloc_epc(s, epc_base, epc_size);
+}
+
+void kvm_get_sgx_info(KVMState *s, struct kvm_sgx_info *infop)
+{
+    memset(infop, 0, sizeof(*infop));
+
+    if (!kvm_enabled())
+        return;
+
+    infop->epc_base = sgx_state->epc_base;
+    infop->epc_size = sgx_state->epc_size;
+    infop->epc_addr = sgx_state->epc_addr;
+}
