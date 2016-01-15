@@ -255,7 +255,7 @@ static const char *svm_feature_name[] = {
 };
 
 static const char *cpuid_7_0_ebx_feature_name[] = {
-    "fsgsbase", "tsc_adjust", NULL, "bmi1", "hle", "avx2", NULL, "smep",
+    "fsgsbase", "tsc_adjust", "sgx", "bmi1", "hle", "avx2", NULL, "smep",
     "bmi2", "erms", "invpcid", "rtm", NULL, NULL, "mpx", NULL,
     "avx512f", NULL, "rdseed", "adx", "smap", NULL, "pcommit", "clflushopt",
     "clwb", NULL, "avx512pf", "avx512er", "avx512cd", NULL, NULL, NULL,
@@ -420,6 +420,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
         .cpuid_needs_ecx = true, .cpuid_ecx = 0,
         .cpuid_reg = R_EBX,
         .tcg_features = TCG_7_0_EBX_FEATURES,
+        .unmigratable_flags = CPUID_7_0_EBX_SGX,
     },
     [FEAT_7_0_ECX] = {
         .feat_names = cpuid_7_0_ecx_feature_name,
@@ -2169,6 +2170,7 @@ X86CPU *cpu_x86_create(const char *cpu_model, Error **errp)
     gchar **model_pieces;
     char *name, *features;
     Error *error = NULL;
+    struct kvm_sgx_info sgxinfo;
 
     model_pieces = g_strsplit(cpu_model, ",", 2);
     if (!model_pieces[0]) {
@@ -2191,6 +2193,11 @@ X86CPU *cpu_x86_create(const char *cpu_model, Error **errp)
     }
 
     cpu = X86_CPU(object_new(object_class_get_name(oc)));
+
+    /* We need to mark CPU to be unmigratable if SGX is enabled */
+    kvm_get_sgx_info(kvm_state, &sgxinfo);
+    if (sgxinfo.epc_base && sgxinfo.epc_size)
+        cpu->migratable = false;
 
     x86_cpu_parse_featurestr(CPU(cpu), features, &error);
     if (error) {

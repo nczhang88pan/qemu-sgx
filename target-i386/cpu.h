@@ -585,6 +585,7 @@ typedef uint32_t FeatureWordArray[FEATURE_WORDS];
 #define CPUID_SVM_PFTHRESHOLD  (1U << 12)
 
 #define CPUID_7_0_EBX_FSGSBASE (1U << 0)
+#define CPUID_7_0_EBX_SGX      (1U << 2)
 #define CPUID_7_0_EBX_BMI1     (1U << 3)
 #define CPUID_7_0_EBX_HLE      (1U << 4)
 #define CPUID_7_0_EBX_AVX2     (1U << 5)
