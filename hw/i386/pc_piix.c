@@ -121,6 +121,34 @@ static void pc_init1(MachineState *machine,
         pcms->below_4g_mem_size = machine->ram_size;
     }
 
+    /*
+     * EPC base must be calculated before creating vcpus, as cpu_x86_cpuid needs
+     * this infomation.
+     */
+    machine->epc_size &= PC_EPC_SIZE_MASK;
+    if (machine->epc_size) {
+        if (!kvm_enabled()) {
+            error_report("SGX needs KVM support.\n");
+            exit(1);
+        }
+        if (machine->epc_size > PC_MAX_EPC_SIZE) {
+            machine->epc_size = PC_MAX_EPC_SIZE;
+            error_report("Warning: EPC size too large, set to 0x%lx\n",
+                    (unsigned long)machine->epc_size);
+        }
+        pcms->epc_base = pcms->below_4g_mem_size;
+        pcms->epc_size = machine->epc_size;
+        if (kvm_init_sgx(kvm_state, pcms->epc_base, pcms->epc_size)) {
+            fprintf(stderr, "kvm initialize SGX failed\n");
+            exit(1);
+        }
+        pc_epc_init(pcms, system_memory);
+        printf("%s: EPC initialized: base 0x%lx, size 0x%lx\n", __func__,
+                (unsigned long)pcms->epc_base, (unsigned long)pcms->epc_size);
+    } else {
+        pcms->epc_base = pcms->epc_size = 0;
+    }
+
     if (xen_enabled()) {
         xen_hvm_init(pcms, &ram_memory);
     }
@@ -176,6 +204,7 @@ static void pc_init1(MachineState *machine,
                               system_memory, system_io, machine->ram_size,
                               pcms->below_4g_mem_size,
                               pcms->above_4g_mem_size,
+                              pcms->epc_size,
                               pci_memory, ram_memory);
         pcms->bus = pci_bus;
     } else {

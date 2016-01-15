@@ -62,6 +62,7 @@ struct PCMachineState {
 
     /* RAM information (sizes, addresses, configuration): */
     ram_addr_t below_4g_mem_size, above_4g_mem_size;
+    ram_addr_t epc_base, epc_size;
 
     /* CPU and apic information: */
     bool apic_xrupt_override;
@@ -298,6 +299,7 @@ PCIBus *i440fx_init(const char *host_type, const char *pci_type,
                     ram_addr_t ram_size,
                     ram_addr_t below_4g_mem_size,
                     ram_addr_t above_4g_mem_size,
+                    ram_addr_t epc_size,
                     MemoryRegion *pci_memory,
                     MemoryRegion *ram_memory);
 
@@ -344,6 +346,15 @@ void pc_system_firmware_init(MemoryRegion *rom_memory,
 
 /* pvpanic.c */
 uint16_t pvpanic_port(void);
+
+/* Currently EPC can not be bigger than 256M, which should be big enough as in
+ * reality the maximum EPC size is 128M in my knowledge. EPC also is aligned to
+ * 1MB.
+ */
+#define PC_MAX_EPC_SIZE (128 * (1ul << 20))
+#define PC_EPC_SIZE_MASK (~((1ul << 20) - 1))
+
+void pc_epc_init(PCMachineState *pcms, MemoryRegion *system_memory);
 
 /* e820 types */
 #define E820_RAM        1

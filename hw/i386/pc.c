@@ -1397,6 +1397,24 @@ void pc_memory_init(PCMachineState *pcms,
     pcms->fw_cfg = fw_cfg;
 }
 
+void pc_epc_init(PCMachineState *pcms, MemoryRegion *system_memory)
+{
+    MemoryRegion *epc;
+    struct kvm_sgx_info sgxinfo;
+
+    assert(kvm_enabled());
+    assert(pcms->epc_base && pcms->epc_size);
+
+    kvm_get_sgx_info(kvm_state, &sgxinfo);
+
+    assert(sgxinfo.epc_addr);
+
+    epc = g_malloc0(sizeof(*epc));
+    memory_region_init_ram_ptr(epc, NULL, "epc", pcms->epc_size, sgxinfo.epc_addr);
+    memory_region_add_subregion(system_memory, pcms->epc_base, epc);
+    e820_add_entry(pcms->epc_base, pcms->epc_size, E820_RESERVED);
+}
+
 qemu_irq pc_allocate_cpu_irq(void)
 {
     return qemu_allocate_irq(pic_irq_request, NULL, 0);

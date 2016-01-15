@@ -47,6 +47,7 @@
 #include "hw/usb.h"
 #include "qemu/error-report.h"
 #include "migration/migration.h"
+#include "kvm_i386.h"
 
 /* ICH9 AHCI has 6 ports */
 #define MAX_SATA_PORTS     6
@@ -109,6 +110,38 @@ static void pc_q35_init(MachineState *machine)
     } else {
         pcms->above_4g_mem_size = 0;
         pcms->below_4g_mem_size = machine->ram_size;
+    }
+
+    /*
+     * EPC base must be calculated before creating vcpus, as cpu_x86_cpuid needs
+     * this infomation.
+     */
+    machine->epc_size &= PC_EPC_SIZE_MASK;
+    if (machine->epc_size) {
+        if (!kvm_enabled()) {
+            error_report("SGX needs KVM support.\n");
+            exit(1);
+        }
+        if (machine->epc_size > PC_MAX_EPC_SIZE) {
+            machine->epc_size = PC_MAX_EPC_SIZE;
+            error_report("Warning: EPC size too large, set to 0x%lx\n",
+                    (unsigned long)machine->epc_size);
+        }
+        pcms->epc_size = machine->epc_size;
+        /* Steal low memory space if there's no space for EPC */
+        if (pcms->below_4g_mem_size + pcms->epc_size > 0xb0000000) {
+            pcms->above_4g_mem_size += (pcms->below_4g_mem_size + pcms->epc_size
+                    - 0xb0000000);
+            pcms->below_4g_mem_size = (0xb0000000 - pcms->epc_size);
+        }
+        pcms->epc_base = pcms->below_4g_mem_size;
+        if (kvm_init_sgx(kvm_state, pcms->epc_base, pcms->epc_size)) {
+            fprintf(stderr, "kvm initialize SGX failed\n");
+            exit(1);
+        }
+        pc_epc_init(pcms, get_system_memory());
+        printf("%s: EPC initialized: base 0x%lx, size 0x%lx\n", __func__,
+                (unsigned long)pcms->epc_base, (unsigned long)pcms->epc_size);
     }
 
     if (xen_enabled()) {
