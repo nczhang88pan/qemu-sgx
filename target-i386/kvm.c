@@ -774,6 +774,15 @@ int kvm_arch_init_vcpu(CPUState *cs)
                 c = &cpuid_data.entries[cpuid_i++];
             }
             break;
+        case 0x12:
+            for (j = 0; j <= 2; j++) {
+                c->function = 0x12;
+                c->index = j;
+                c->flags = KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
+                cpu_x86_cpuid(env, 0x12, j, &c->eax, &c->ebx, &c->ecx, &c->edx);
+                c = &cpuid_data.entries[cpuid_i++];
+            }
+            break;
         default:
             c->function = i;
             c->flags = 0;

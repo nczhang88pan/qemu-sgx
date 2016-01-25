@@ -2516,6 +2516,26 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         }
         break;
     }
+    case 0x12:
+        if (!(env->features[FEAT_7_0_EBX] & CPUID_7_0_EBX_SGX)) {
+            *eax = *ebx = *ecx = *edx = 0;
+            break;
+        }
+        /* Always patch virtual EPC base, size for leaf 0x2. */
+        host_cpuid(index, count, eax, ebx, ecx, edx);
+        if (count == 0x2) {
+            struct kvm_sgx_info sgxinfo;
+            kvm_get_sgx_info(kvm_state, &sgxinfo);
+
+            *eax = (*eax & 0xf) |
+                (unsigned int)(sgxinfo.epc_base & 0x00000000fffff000);
+            *ebx = (sgxinfo.epc_base >> 32);
+            *ecx = (*ecx & 0xf) |
+                (unsigned int)(sgxinfo.epc_size & 0x00000000fffff000);
+            *edx = (sgxinfo.epc_size >> 32);
+        }
+
+        break;
     case 0x80000000:
         *eax = env->cpuid_xlevel;
         *ebx = env->cpuid_vendor1;
