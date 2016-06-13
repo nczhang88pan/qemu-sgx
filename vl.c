@@ -133,6 +133,7 @@ int display_opengl;
 static int display_remote;
 const char* keyboard_layout = NULL;
 ram_addr_t ram_size;
+ram_addr_t epc_size = 0;
 const char *mem_path = NULL;
 int mem_prealloc = 0; /* force preallocation of physical target memory */
 bool enable_mlock = false;
@@ -522,6 +523,20 @@ static QemuOptsList qemu_fw_cfg_opts = {
             .name = "string",
             .type = QEMU_OPT_STRING,
             .help = "Sets content of the blob to be inserted from a string",
+        },
+        { /* end of list */ }
+    },
+};
+
+static QemuOptsList qemu_epc_opts = {
+    .name = "epc",
+    .implied_opt_name = "size",
+    .head = QTAILQ_HEAD_INITIALIZER(qemu_epc_opts.head),
+    .merge_lists = true,
+    .desc = {
+        {
+            .name = "size",
+            .type = QEMU_OPT_SIZE,
         },
         { /* end of list */ }
     },
@@ -3028,6 +3043,7 @@ int main(int argc, char **argv, char **envp)
     qemu_add_opts(&qemu_icount_opts);
     qemu_add_opts(&qemu_semihosting_config_opts);
     qemu_add_opts(&qemu_fw_cfg_opts);
+    qemu_add_opts(&qemu_epc_opts);
     module_call_init(MODULE_INIT_OPTS);
 
     runstate_init();
@@ -3342,6 +3358,51 @@ int main(int argc, char **argv, char **envp)
                     exit(EXIT_FAILURE);
                 }
                 break;
+            case QEMU_OPTION_epc: {
+                uint64_t sz;
+                const char *epc_str;
+                fprintf(stderr, "in QEMU_OPTION_epc\n");
+
+                opts = qemu_opts_parse_noisily(qemu_find_opts("epc"),
+                                       optarg, true);
+                if (!opts) {
+                    exit(EXIT_FAILURE);
+                }
+
+                epc_str = qemu_opt_get(opts, "size");
+                if (!epc_str) {
+                    error_report("invalid -epc option, missing 'size' option");
+                    exit(EXIT_FAILURE);
+                }
+                if (!*epc_str) {
+                    error_report("missing 'size' option value");
+                    exit(EXIT_FAILURE);
+                }
+
+                sz = qemu_opt_get_size(opts, "size", 0);
+
+                /* Fix up legacy suffix-less format */
+                if (g_ascii_isdigit(epc_str[strlen(epc_str) - 1])) {
+                    uint64_t overflow_check = sz;
+
+                    sz <<= 20;
+                    if ((sz >> 20) != overflow_check) {
+                        error_report("too large 'size' option value");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+
+                /* "-epc 0" is invalid */
+                if (sz == 0) {
+                    error_report("epc size can't be 0\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                sz = QEMU_ALIGN_UP(sz, 8192);
+                epc_size = sz;
+                fprintf(stdout, "epc size 0x%lx\n", (unsigned long)epc_size);
+                break;
+            }
 #ifdef CONFIG_TPM
             case QEMU_OPTION_tpmdev:
                 if (tpm_config_parse(qemu_find_opts("tpmdev"), optarg) < 0) {
@@ -4511,6 +4572,7 @@ int main(int argc, char **argv, char **envp)
     current_machine->ram_slots = ram_slots;
     current_machine->boot_order = boot_order;
     current_machine->cpu_model = cpu_model;
+    current_machine->epc_size = epc_size;
 
     machine_class->init(current_machine);
 

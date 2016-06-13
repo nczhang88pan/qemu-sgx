@@ -3961,6 +3961,21 @@ contents of @code{iv.b64} to the second secret
 
 ETEXI
 
+DEF("epc", HAS_ARG, QEMU_OPTION_epc,
+    "-epc [size=]megs\n"
+    "                configure guest EPC size\n"
+    "                size: initial amount of guest EPC.",
+    QEMU_ARCH_I386)
+STEXI
+@item -epc [size=]@var{megs}
+@findex -epc
+Set EPC to @var{megs} megabytes. Optionally, a suffix of ``M'' or ``G''
+can be used to signify a value in megabytes or gigabytes respectively.
+
+@example
+qemu-system-x86_64 -epc 64M
+@end example
+ETEXI
 
 HXCOMM This is the last statement. Insert new options before this line!
 STEXI
