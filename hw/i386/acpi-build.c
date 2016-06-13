@@ -333,6 +333,39 @@ build_fadt(GArray *table_data, GArray *linker, AcpiPmInfo *pm,
                  (void *)fadt, "FACP", sizeof(*fadt), 1, oem_id, oem_table_id);
 }
 
+static void build_epc(Aml *scope, uint64_t epc_base, uint64_t epc_size)
+{
+    Aml *dev, *rbuf, *crs, *sta;
+
+    printf("Generate SSDT for EPC: base 0x%lx, size 0x%lx\n", epc_base, epc_size);
+
+    dev = aml_device("EPC");
+    aml_append(dev, aml_name_decl("_HID", aml_eisaid("INT0E0C")));
+    aml_append(dev, aml_name_decl("_STR", aml_unicode("Enclave Page Cache 1.0")));
+    /* FIXME: aml_append Package? */
+    rbuf = aml_resource_template();
+    aml_append(rbuf, aml_qword_memory(AML_POS_DECODE, AML_MIN_FIXED, AML_MAX_FIXED,
+            AML_NON_CACHEABLE,  /* consistent with ACPI dumped from bare-metal */
+            AML_READ_WRITE,
+            0x0000000000000000,
+            epc_base,
+            epc_base + epc_size - 1,
+            0x0000000000000000,
+            epc_size));
+    aml_append(dev, aml_name_decl("RBUF", rbuf));
+
+    crs = aml_method("_CRS", 0, AML_NOTSERIALIZED);
+    aml_append(crs, aml_return(rbuf));
+    aml_append(dev, crs);
+
+    sta = aml_method("_STA", 0, AML_SERIALIZED);
+    aml_append(sta, aml_return(aml_int(0x0F)));
+
+    aml_append(dev, sta);
+
+    aml_append(scope, dev);
+}
+
 static void
 build_madt(GArray *table_data, GArray *linker, PCMachineState *pcms)
 {
@@ -2360,6 +2393,9 @@ build_dsdt(GArray *table_data, GArray *linker,
 
                 aml_append(sb_scope, scope);
             }
+        }
+        if (pcms->epc_base && pcms->epc_size) {
+            build_epc(sb_scope, pcms->epc_base, pcms->epc_size);
         }
         aml_append(dsdt, sb_scope);
     }
