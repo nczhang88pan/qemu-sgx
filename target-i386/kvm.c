@@ -1083,6 +1083,8 @@ static void register_smram_listener(Notifier *n, void *unused)
                                  &smram_address_space, 1);
 }
 
+static void kvm_fini_sgx(void);
+
 int kvm_arch_init(MachineState *ms, KVMState *s)
 {
     uint64_t identity_base = 0xfffbc000;
@@ -1158,6 +1160,9 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         smram_machine_done.notify = register_smram_listener;
         qemu_add_machine_init_done_notifier(&smram_machine_done);
     }
+
+    atexit(&kvm_fini_sgx);
+
     return 0;
 }
 
@@ -3473,4 +3478,9 @@ void kvm_get_sgx_info(KVMState *s, struct kvm_sgx_info *infop)
     infop->epc_base = sgx_state->epc_base;
     infop->epc_size = sgx_state->epc_size;
     infop->epc_addr = sgx_state->epc_addr;
+}
+
+static void kvm_fini_sgx(void)
+{
+    kvm_free_epc(kvm_state);
 }
