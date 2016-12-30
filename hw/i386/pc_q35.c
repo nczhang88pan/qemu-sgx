@@ -130,18 +130,18 @@ static void pc_q35_init(MachineState *machine)
         pcms->epc_size = machine->epc_size;
         /* Steal low memory space if there's no space for EPC */
         if (pcms->below_4g_mem_size + pcms->epc_size > 0xb0000000) {
-            pcms->above_4g_mem_size += (pcms->below_4g_mem_size + pcms->epc_size
+            pcms->above_4g_mem_size += (pcms->below_4g_mem_size + pcms->epc_size +pcms->iso_size
                     - 0xb0000000);
-            pcms->below_4g_mem_size = (0xb0000000 - pcms->epc_size);
+            pcms->below_4g_mem_size = (0xb0000000 - pcms->epc_size - pcms->iso_size);
         }
         pcms->epc_base = pcms->below_4g_mem_size;
-        if (kvm_init_sgx(kvm_state, pcms->epc_base, pcms->epc_size)) {
+        if (kvm_init_sgx(kvm_state, pcms->epc_base, pcms->epc_size, pcms->iso_size)) {
             fprintf(stderr, "kvm initialize SGX failed\n");
             exit(1);
         }
         pc_epc_init(pcms, get_system_memory());
         printf("%s: EPC initialized: base 0x%lx, size 0x%lx\n", __func__,
-                (unsigned long)pcms->epc_base, (unsigned long)pcms->epc_size);
+                (unsigned long)pcms->epc_base, (unsigned long)pcms->epc_size + (unsigned long)pcms->iso_size);
     }
 
     if (xen_enabled()) {

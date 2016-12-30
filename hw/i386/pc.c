@@ -1410,9 +1410,9 @@ void pc_epc_init(PCMachineState *pcms, MemoryRegion *system_memory)
     assert(sgxinfo.epc_addr);
 
     epc = g_malloc0(sizeof(*epc));
-    memory_region_init_ram_ptr(epc, NULL, "epc", pcms->epc_size, sgxinfo.epc_addr);
+    memory_region_init_ram_ptr(epc, NULL, "epc", pcms->epc_size + pcms->iso_size, sgxinfo.epc_addr);
     memory_region_add_subregion(system_memory, pcms->epc_base, epc);
-    e820_add_entry(pcms->epc_base, pcms->epc_size, E820_RESERVED);
+    e820_add_entry(pcms->epc_base, pcms->epc_size + pcms->iso_size, E820_RESERVED);
 }
 
 qemu_irq pc_allocate_cpu_irq(void)

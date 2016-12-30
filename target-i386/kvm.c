@@ -775,7 +775,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
             }
             break;
         case 0x12:
-            for (j = 0; j <= 2; j++) {
+            for (j = 0; j <= 3; j++) {
                 c->function = 0x12;
                 c->index = j;
                 c->flags = KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
@@ -3356,6 +3356,7 @@ typedef struct SGXState {
     int         sgx_fd;
     hwaddr      epc_base;
     ram_addr_t  epc_size;
+    ram_addr_t  iso_size;   /*the extra pages allocated to the isolation kernel runtime*/
     __u32       epc_handle; /* handle of EPC allocated to this VM. */
     void        *epc_addr;  /* host virtual address of EPC by mmap */
 } SGXState;
@@ -3363,6 +3364,7 @@ typedef struct SGXState {
 static SGXState __sgx_state = {
 	.sgx_fd = 0,
 	.epc_size = 0,
+    .iso_size = 0,
 	.epc_base = 0,
 	.epc_handle = 0,
 	.epc_addr = NULL,
@@ -3386,6 +3388,8 @@ static SGXState *sgx_state = &__sgx_state;
 struct sgx_alloc_vm_epc {
 	/* IN: How many pages for guest */
 	__u32   nr_pages;
+    /* IN: How many pages for isolated kernel runtime*/
+    __u32   iso_pages;
 	/* IN: Flags (placeholder) */
 	__u32   flags;
 	/* OUT: handle of the EPC buffer, passed as pgoff in mmap */
@@ -3426,7 +3430,7 @@ static void kvm_free_epc(KVMState *s)
     memset(sgx_state, 0, sizeof(*sgx_state));
 }
 
-static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size)
+static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size ,ram_addr_t iso_size)
 {
     int fd;
     struct sgx_alloc_vm_epc allocp;
@@ -3443,6 +3447,7 @@ static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size)
     sgx_state->sgx_fd = fd;
 
     allocp.nr_pages = (epc_size >> 12);
+    allocp.iso_pages = (iso_size >> 12);
     allocp.flags = 0;
     ret = ioctl(fd, SGX_IOC_ALLOC_VM_EPC, &allocp);
     if (ret) {
@@ -3454,8 +3459,9 @@ static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size)
     sgx_state->epc_base = epc_base;
     sgx_state->epc_size = epc_size;
     sgx_state->epc_handle = allocp.handle;
+    sgx_state->iso_size = (allocp.iso_pages << 12);
 
-    addr = mmap(0, epc_size, PROT_NONE, MAP_PRIVATE, fd, allocp.handle);
+    addr = mmap(0, epc_size + sgx_state->iso_size, PROT_NONE, MAP_PRIVATE, fd, allocp.handle);
     if (!addr) {
         ret = -EFAULT;
         error_report("%s: mmap EPC failed\n", __func__);
@@ -3470,11 +3476,11 @@ err:
     return ret;
 }
 
-int kvm_init_sgx(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size)
+int kvm_init_sgx(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size, ram_addr_t iso_size)
 {
     if (!kvm_enabled())
         return -EINVAL;
-    return kvm_alloc_epc(s, epc_base, epc_size);
+    return kvm_alloc_epc(s, epc_base, epc_size, iso_size);
 }
 
 void kvm_get_sgx_info(KVMState *s, struct kvm_sgx_info *infop)
@@ -3486,7 +3492,9 @@ void kvm_get_sgx_info(KVMState *s, struct kvm_sgx_info *infop)
 
     infop->epc_base = sgx_state->epc_base;
     infop->epc_size = sgx_state->epc_size;
+    infop->iso_size = sgx_state->iso_size;
     infop->epc_addr = sgx_state->epc_addr;
+
 }
 
 static void kvm_fini_sgx(void)

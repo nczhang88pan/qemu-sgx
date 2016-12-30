@@ -133,20 +133,22 @@ static void pc_init1(MachineState *machine,
         }
         if (machine->epc_size > PC_MAX_EPC_SIZE) {
             machine->epc_size = PC_MAX_EPC_SIZE;
+            machine->iso_size = PC_MAX_EPC_SIZE;
             error_report("Warning: EPC size too large, set to 0x%lx\n",
                     (unsigned long)machine->epc_size);
         }
         pcms->epc_base = pcms->below_4g_mem_size;
         pcms->epc_size = machine->epc_size;
-        if (kvm_init_sgx(kvm_state, pcms->epc_base, pcms->epc_size)) {
+        pcms->iso_size = machine->iso_size;
+        if (kvm_init_sgx(kvm_state, pcms->epc_base, pcms->epc_size,pcms->iso_size)) {
             fprintf(stderr, "kvm initialize SGX failed\n");
             exit(1);
         }
         pc_epc_init(pcms, system_memory);
-        printf("%s: EPC initialized: base 0x%lx, size 0x%lx\n", __func__,
-                (unsigned long)pcms->epc_base, (unsigned long)pcms->epc_size);
+        printf("%s: EPC initialized: base 0x%lx, size 0x%lx\n，iso_size 0x%lx\n", __func__,
+                (unsigned long)pcms->epc_base, (unsigned long)pcms->epc_size, (unsigned long)pcms->iso_size);
     } else {
-        pcms->epc_base = pcms->epc_size = 0;
+        pcms->epc_base = pcms->epc_size = pcms->iso_size = 0;
     }
 
     if (xen_enabled()) {
@@ -205,6 +207,7 @@ static void pc_init1(MachineState *machine,
                               pcms->below_4g_mem_size,
                               pcms->above_4g_mem_size,
                               pcms->epc_size,
+                              pcms->iso_size,
                               pci_memory, ram_memory);
         pcms->bus = pci_bus;
     } else {

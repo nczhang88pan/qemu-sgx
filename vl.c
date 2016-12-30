@@ -134,6 +134,7 @@ static int display_remote;
 const char* keyboard_layout = NULL;
 ram_addr_t ram_size;
 ram_addr_t epc_size = 0;
+ram_addr_t iso_size = 0;
 const char *mem_path = NULL;
 int mem_prealloc = 0; /* force preallocation of physical target memory */
 bool enable_mlock = false;
@@ -3400,7 +3401,8 @@ int main(int argc, char **argv, char **envp)
 
                 sz = QEMU_ALIGN_UP(sz, 8192);
                 epc_size = sz;
-                fprintf(stdout, "epc size 0x%lx\n", (unsigned long)epc_size);
+                iso_size = sz;
+                fprintf(stdout, "epc size 0x%lx\n iso size 0x%lx\n", (unsigned long)epc_size,(unsigned long)iso_size);
                 break;
             }
 #ifdef CONFIG_TPM
@@ -4573,6 +4575,7 @@ int main(int argc, char **argv, char **envp)
     current_machine->boot_order = boot_order;
     current_machine->cpu_model = cpu_model;
     current_machine->epc_size = epc_size;
+    current_machine->iso_size = iso_size;// at the development phase, we assume that the iso_size equals to epc_size;
 
     machine_class->init(current_machine);
 

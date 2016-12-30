@@ -44,9 +44,10 @@ int kvm_device_msix_deassign(KVMState *s, uint32_t dev_id);
 struct kvm_sgx_info {
     ram_addr_t epc_base;
     ram_addr_t epc_size;
+    ram_addr_t iso_size;
     void *epc_addr;
 };
-int kvm_init_sgx(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size);
+int kvm_init_sgx(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size ,ram_addr_t iso_size);
 void kvm_get_sgx_info(KVMState *s, struct kvm_sgx_info *infop);
 
 #endif

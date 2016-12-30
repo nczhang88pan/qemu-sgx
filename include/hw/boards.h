@@ -165,6 +165,7 @@ struct MachineState {
     const char *cpu_model;
     AccelState *accelerator;
     ram_addr_t epc_size;
+    ram_addr_t iso_size;
 };
 
 #define DEFINE_MACHINE(namestr, machine_initfn) \

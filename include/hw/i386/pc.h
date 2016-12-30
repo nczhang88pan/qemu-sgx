@@ -62,7 +62,7 @@ struct PCMachineState {
 
     /* RAM information (sizes, addresses, configuration): */
     ram_addr_t below_4g_mem_size, above_4g_mem_size;
-    ram_addr_t epc_base, epc_size;
+    ram_addr_t epc_base, epc_size, iso_size;
 
     /* CPU and apic information: */
     bool apic_xrupt_override;
@@ -300,6 +300,7 @@ PCIBus *i440fx_init(const char *host_type, const char *pci_type,
                     ram_addr_t below_4g_mem_size,
                     ram_addr_t above_4g_mem_size,
                     ram_addr_t epc_size,
+                    ram_addr_t iso_size,
                     MemoryRegion *pci_memory,
                     MemoryRegion *ram_memory);
 

@@ -2535,6 +2535,20 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             *edx = (sgxinfo.epc_size >> 32);
         }
 
+        if (count == 0x3) {
+            struct kvm_sgx_info sgxinfo;
+            kvm_get_sgx_info(kvm_state, &sgxinfo);
+
+            *eax = (*eax * 0xf) |
+                (unsigned int)((sgxinfo.epc_base + sgxinfo.epc_size) & 0x00000000fffff000);
+            *ebx = (sgxinfo.epc_base + sgxinfo.epc_size) >> 32;
+
+
+            *ecx = (*ecx & 0xf) |
+                (unsigned int)(sgxinfo.iso_size & 0x00000000fffff000);
+            *edx = (sgxinfo.iso_size >> 32);
+        }
+
         break;
     case 0x80000000:
         *eax = env->cpuid_xlevel;
