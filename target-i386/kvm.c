@@ -3461,7 +3461,8 @@ static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size ,
     sgx_state->epc_handle = allocp.handle;
     sgx_state->iso_size = (allocp.iso_pages << 12);
 
-    addr = mmap(0, epc_size + sgx_state->iso_size, PROT_NONE, MAP_PRIVATE, fd, allocp.handle);
+    addr = mmap(0, epc_size + sgx_state->iso_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, allocp.handle);
+    memset(addr+epc_size,6,1<<12);
     if (!addr) {
         ret = -EFAULT;
         error_report("%s: mmap EPC failed\n", __func__);
