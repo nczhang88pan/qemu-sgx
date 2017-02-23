@@ -3354,20 +3354,25 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
 /* VM SGX state */
 typedef struct SGXState {
     int         sgx_fd;
+    int         sgx_iso_fd;
     hwaddr      epc_base;
     ram_addr_t  epc_size;
     ram_addr_t  iso_size;   /*the extra pages allocated to the isolation kernel runtime*/
     __u32       epc_handle; /* handle of EPC allocated to this VM. */
     void        *epc_addr;  /* host virtual address of EPC by mmap */
+    void        *iso_qemu_addr;
 } SGXState;
 
 static SGXState __sgx_state = {
 	.sgx_fd = 0,
+    .sgx_iso_fd = 0,
 	.epc_size = 0,
     .iso_size = 0,
 	.epc_base = 0,
 	.epc_handle = 0,
 	.epc_addr = NULL,
+    .iso_qemu_addr = NULL,
+
 };
 static SGXState *sgx_state = &__sgx_state;
 
@@ -3384,6 +3389,8 @@ static SGXState *sgx_state = &__sgx_state;
 	_IOWR(SGX_MAGIC, 0x03, struct sgx_alloc_vm_epc)
 #define SGX_IOC_FREE_VM_EPC \
 	_IOW(SGX_MAGIC, 0x04, struct sgx_free_vm_epc)
+#define SGX_IOC_ISO_CREATE \
+	_IOW(SGX_MAGIC, 0x05, struct sgx_iso_create)
 
 struct sgx_alloc_vm_epc {
 	/* IN: How many pages for guest */
@@ -3401,9 +3408,27 @@ struct sgx_free_vm_epc {
 	__u32   handle;
 } __attribute__((packed));
 
+struct sgx_iso_create {
+	/* IN: handle of EPC buffer to be freed */
+	__u32   handle;
+} __attribute__((packed));
+
 static void kvm_free_epc(KVMState *s)
 {
     int ret;
+
+    if (sgx_state->iso_size){
+        ret = munmap(sgx_state->iso_qemu_addr,sgx_state->iso_size);
+        if (ret)
+            error_report("%s: munmap EPC failed with %d.\n", __func__, ret);
+    }
+
+    if (sgx_state->sgx_iso_fd) {
+        ret = qemu_close(sgx_state->sgx_iso_fd);
+        if (ret)
+             error_report("%s: close iso_fd failed with %d\n.",
+                     __func__,  ret);
+    }
 
     if (sgx_state->epc_addr) {
         ret = munmap(sgx_state->epc_addr, sgx_state->epc_size);
@@ -3432,9 +3457,10 @@ static void kvm_free_epc(KVMState *s)
 
 static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size ,ram_addr_t iso_size)
 {
-    int fd;
+    int fd,iso_fd;
     struct sgx_alloc_vm_epc allocp;
-    void *addr;
+    struct sgx_iso_create createp;
+    void *addr, *iso_addr;
     int ret;
 
     fd = qemu_open(ISGX_SYSNODE_NAME, O_RDWR);
@@ -3461,15 +3487,35 @@ static int kvm_alloc_epc(KVMState *s, ram_addr_t epc_base, ram_addr_t epc_size ,
     sgx_state->epc_handle = allocp.handle;
     sgx_state->iso_size = (allocp.iso_pages << 12);
 
-    addr = mmap(0, epc_size + sgx_state->iso_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, allocp.handle);
-    memset(addr+epc_size,6,1<<12);
+
+    createp.handle = allocp.handle;
+    iso_fd = ioctl(fd, SGX_IOC_ISO_CREATE,&createp);
+    if (iso_fd <= 0) {
+        ret = -EFAULT;
+        error_report("%s: SGX_IOC_ISO_CREATE failed.\n", __func__);
+        goto err;
+    }
+
+    sgx_state->sgx_iso_fd = iso_fd;
+
+    addr = mmap(0, epc_size, PROT_NONE, MAP_PRIVATE, fd, allocp.handle);
     if (!addr) {
         ret = -EFAULT;
         error_report("%s: mmap EPC failed\n", __func__);
         goto err;
     }
 
+    iso_addr = mmap(0, sgx_state->iso_size, PROT_READ | PROT_WRITE, MAP_SHARED, iso_fd, allocp.handle);
+    if (!iso_addr) {
+        ret = -EFAULT;
+        error_report("%s: mmap iso failed\n", __func__);
+        goto err;
+    }
+    memset(iso_addr,6,1<<12);
+
+
     sgx_state->epc_addr = addr;
+    sgx_state->iso_qemu_addr = iso_addr;
 
     return 0;
 err:
